@@ -5,11 +5,25 @@ const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { /* options */ });
+const io = new Server(server, {
+    cors: {
+        origin: "https://tic-tac-toe3squared-frontend.vercel.app",
+        methods: ["GET", "POST"]
+    }
+});
 
 // Serve frontend
 app.use(express.static(path.join(__dirname, "..", "frontend")));
 app.use(express.json());
+
+// CORS for Vercel frontend
+app.use((req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "https://tic-tac-toe3squared-frontend.vercel.app");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    if (req.method === "OPTIONS") return res.sendStatus(204);
+    next();
+});
 
 // -------------------------
 // SEGMENT ARRAYS
@@ -924,12 +938,12 @@ function handleSpin(socket, game, roomId, isRespin) {
 
 function pickWeightedResult() {
     const pool = [
-        { id: "PLACE_1",   weight: 53 },
-        { id: "LOSE_TURN", weight: 11 },
-        { id: "PLACE_2",   weight: 7  },
-        { id: "REMOVE_1",  weight: 11 },
-        { id: "REPLACE_1", weight: 11 },
-        { id: "MYSTERY",   weight: 7  }
+        { id: "PLACE_1",   weight: 52 },
+        { id: "LOSE_TURN", weight: 12 },
+        { id: "PLACE_2",   weight: 6  },
+        { id: "REMOVE_1",  weight: 12 },
+        { id: "REPLACE_1", weight: 12 },
+        { id: "MYSTERY",   weight: 6  }
     ];
     const total = pool.reduce((s, p) => s + p.weight, 0);
     let r = Math.random() * total;
@@ -941,9 +955,9 @@ function pickWeightedResult() {
 
 function pickWeightedBeginning() {
     const pool = [
-        { id: "PLACE_1",   weight: 80 },
-        { id: "PLACE_2",   weight: 8 },
-        { id: "LOSE_TURN", weight: 12 }
+        { id: "PLACE_1",   weight: 70 },
+        { id: "PLACE_2",   weight: 15 },
+        { id: "LOSE_TURN", weight: 15 }
     ];
     const total = pool.reduce((s, p) => s + p.weight, 0);
     let r = Math.random() * total;
@@ -1209,4 +1223,5 @@ function checkForDraw(game) {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
+    console.log(`Server running at http://localhost:${PORT}`);
 });
