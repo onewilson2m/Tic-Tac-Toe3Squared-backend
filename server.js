@@ -826,22 +826,33 @@ function handleSpin(socket, game, roomId, isRespin) {
             const isMysteryAction = action.id.startsWith("MYSTERY_");
 
             if (isMysteryAction) {
-                // Advance to next mystery option
-                console.log(`[${roomId}] Mystery action has no valid targets, advancing`);
-                action = getNextMystery(game);
-                game.currentSpinResult = action;
-                // Recalculate moves for the new action
-                if (action.id === "PLACE_2" || action.id === "MYSTERY_PLACE_2") {
-                    game.movesRemainingThisTurn = 2;
-                } else if (action.id === "LOSE_TURN") {
-                    game.movesRemainingThisTurn = 0;
-                } else {
-                    game.movesRemainingThisTurn = 1;
+                // Silently cycle through all mystery options until one has valid targets
+                // Try up to 5 times (full pool size) before giving up
+                let attempts = 0;
+                while (!hasValidTarget && attempts < 5) {
+                    console.log(`[${roomId}] Mystery action ${action.id} has no valid targets, advancing`);
+                    action = getNextMystery(game);
+                    game.currentSpinResult = action;
+                    if (action.id === "MYSTERY_PLACE_2") {
+                        game.movesRemainingThisTurn = 2;
+                    } else {
+                        game.movesRemainingThisTurn = 1;
+                    }
+                    hasValidTarget = checkForValidTargets(game, playerSymbol, action.id);
+                    attempts++;
                 }
-                hasValidTarget = checkForValidTargets(game, playerSymbol, action.id);
-            }
 
-            if (!hasValidTarget) {
+                if (!hasValidTarget) {
+                    // All mystery options exhausted — silently lose turn, no respin
+                    console.log(`[${roomId}] All mystery options exhausted, ending turn`);
+                    game.currentSpinResult      = { id: "LOSE_TURN", label: "ACTION_LOSE_TURN", color: "#f4a3a3" };
+                    game.movesRemainingThisTurn = 0;
+                    setTimeout(() => { endTurn(game, roomId); }, 1000);
+                    return;
+                }
+
+            } else {
+                // Non-mystery action with no valid targets — respin once, then skip
                 if (!isRespin) {
                     // First failure — show result and auto re-spin
                     io.to(socket.id).emit("spin-result", {
@@ -856,9 +867,9 @@ function handleSpin(socket, game, roomId, isRespin) {
                         bottom: "NO_TARGETS_RESPIN"
                     });
 
-                    const opponentId = game.players.find(id => id !== socket.id);
-                    if (opponentId) {
-                        io.to(opponentId).emit("opponent-spin-result", {
+                    const opponentId1 = game.players.find(id => id !== socket.id);
+                    if (opponentId1) {
+                        io.to(opponentId1).emit("opponent-spin-result", {
                             actionId:   action.id,
                             messageKey: "OPP_SPIN_NO_TARGETS_RESPIN"
                         });
@@ -884,9 +895,9 @@ function handleSpin(socket, game, roomId, isRespin) {
                         bottom: "NO_TARGETS_SKIP"
                     });
 
-                    const opponentId = game.players.find(id => id !== socket.id);
-                    if (opponentId) {
-                        io.to(opponentId).emit("opponent-spin-result", {
+                    const opponentId2 = game.players.find(id => id !== socket.id);
+                    if (opponentId2) {
+                        io.to(opponentId2).emit("opponent-spin-result", {
                             actionId:   action.id,
                             messageKey: "OPP_SPIN_NO_TARGETS_SKIP"
                         });
