@@ -263,14 +263,17 @@ io.on("connection", (socket) => {
             return;
         }
 
-        if (room.game.players.length >= 2) {
+        // Allow re-join if socket is already in the room (reconnect case)
+        const alreadyIn = room.game.players.includes(socket.id);
+
+        if (!alreadyIn && room.game.players.length >= 2) {
             socket.emit("room-error", { reason: "ROOM_FULL" });
             return;
         }
 
         // Join the Socket.io room and add to game state
         socket.join(id);
-        if (!room.game.players.includes(socket.id)) {
+        if (!alreadyIn) {
             room.game.players.push(socket.id);
         }
 
@@ -687,13 +690,17 @@ io.on("connection", (socket) => {
         const otherPlayer = game.players.find(id => id !== socket.id);
 
         if (otherPlayer) {
-            io.to(otherPlayer).emit("player-left");
-            // Keep room alive with remaining player so they can accept a new opponent
+            // Only send player-left if game was still in progress
+            // If game was already over, the remaining player is just on the results screen
+            if (!game.gameOver) {
+                io.to(otherPlayer).emit("player-left");
+            }
+            // Reset game state, keep only the remaining player
             room.game = createGameState();
             room.game.players = [otherPlayer];
             console.log(`[${roomId}] Player left. Room kept alive for ${otherPlayer}.`);
         } else {
-            // Both players gone — clean up room
+            // Last player gone — clean up room entirely
             rooms.delete(roomId);
             console.log(`[${roomId}] Room deleted (empty).`);
         }
