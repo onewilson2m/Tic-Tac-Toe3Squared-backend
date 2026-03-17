@@ -956,11 +956,11 @@ function handleSpin(socket, game, roomId, isRespin) {
 
 function pickWeightedResult() {
     const pool = [
-        { id: "PLACE_1",   weight: 52 },
-        { id: "LOSE_TURN", weight: 12 },
+        { id: "PLACE_1",   weight: 55 },
+        { id: "LOSE_TURN", weight: 11 },
         { id: "PLACE_2",   weight: 6  },
-        { id: "REMOVE_1",  weight: 12 },
-        { id: "REPLACE_1", weight: 12 },
+        { id: "REMOVE_1",  weight: 11 },
+        { id: "REPLACE_1", weight: 11 },
         { id: "MYSTERY",   weight: 6  }
     ];
     const total = pool.reduce((s, p) => s + p.weight, 0);
@@ -973,8 +973,8 @@ function pickWeightedResult() {
 
 function pickWeightedBeginning() {
     const pool = [
-        { id: "PLACE_1",   weight: 70 },
-        { id: "PLACE_2",   weight: 15 },
+        { id: "PLACE_1",   weight: 78 },
+        { id: "PLACE_2",   weight: 7 },
         { id: "LOSE_TURN", weight: 15 }
     ];
     const total = pool.reduce((s, p) => s + p.weight, 0);
