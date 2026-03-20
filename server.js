@@ -454,6 +454,17 @@ io.on("connection", (socket) => {
             const hasSecondMove = checkForValidTargets(game, playerSymbol, "PLACE_1");
             if (!hasSecondMove) {
                 game.movesRemainingThisTurn = 0;
+
+                // Must emit move-applied BEFORE returning so opponent board stays in sync
+                io.to(roomId).emit("move-applied", {
+                    masterRow,
+                    masterCol,
+                    cellIndex,
+                    newValue: playerSymbol,
+                    movesRemaining: 0,
+                    masterStatus: game.masterStatus
+                });
+
                 io.to(socket.id).emit("highlight-action-box", { duration: 2000 });
                 io.to(socket.id).emit("no-second-move", { message: "NO_SECOND_MOVE" });
                 setTimeout(() => { endTurn(game, roomId); }, 2500);
