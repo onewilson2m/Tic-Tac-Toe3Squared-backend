@@ -463,7 +463,7 @@ io.on("connection", (socket) => {
             // Calculate blocked grid for second move
             let blockedGridForSecondMove = null;
             const playerLastMove = game.lastMoves[socket.id];
-            if (playerLastMove && playerLastMove.count >= 2 && countTotalEmptyCells(game) > 4) {
+            if (playerLastMove && playerLastMove.count >= 2 && countOpenSubGrids(game) > 1 && countTotalEmptyCells(game) > 4) {
                 let playableCount = 0;
                 for (let r = 0; r < 3; r++)
                     for (let c = 0; c < 3; c++)
@@ -741,7 +741,7 @@ function endTurn(game, roomId) {
     let blockedGrid = null;
     const currentPlayerLastMove = game.lastMoves[game.turnSocket];
 
-    if (currentPlayerLastMove && currentPlayerLastMove.count >= 2 && countTotalEmptyCells(game) > 4) {
+    if (currentPlayerLastMove && currentPlayerLastMove.count >= 2 && countOpenSubGrids(game) > 1 && countTotalEmptyCells(game) > 4) {
         const gridStatus = game.masterStatus[currentPlayerLastMove.row][currentPlayerLastMove.col];
         if (gridStatus === "EMPTY") {
             let playableCount = 0;
@@ -974,7 +974,7 @@ function pickWeightedResult() {
 function pickWeightedBeginning() {
     const pool = [
         { id: "PLACE_1",   weight: 78 },
-        { id: "PLACE_2",   weight: 7 },
+        { id: "PLACE_2",   weight: 7  },
         { id: "LOSE_TURN", weight: 15 }
     ];
     const total = pool.reduce((s, p) => s + p.weight, 0);
@@ -1122,7 +1122,18 @@ function countTotalEmptyCells(game) {
     return count;
 }
 
+function countOpenSubGrids(game) {
+    let count = 0;
+    for (let r = 0; r < 3; r++)
+        for (let c = 0; c < 3; c++)
+            if (game.masterStatus[r][c] === "EMPTY") count++;
+    return count;
+}
+
 function canActInSubGrid(game, masterRow, masterCol, playerId) {
+    // Suspend consecutive move rule when only one sub-grid remains open
+    // or when 4 or fewer empty cells remain across all open sub-grids
+    if (countOpenSubGrids(game) <= 1) return true;
     if (countTotalEmptyCells(game) <= 4) return true;
 
     const playerLastMove = game.lastMoves[playerId];
