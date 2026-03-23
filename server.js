@@ -124,6 +124,7 @@ function createGameState() {
         players: [],
         numbers: {},
         symbols: {},
+        playerNames: {}, // socketId -> username, for reconnect identification
         preGameNumbers: {},
         turnNumber: 1,
         turnSocket: null,
@@ -254,7 +255,7 @@ io.on("connection", (socket) => {
     // JOIN ROOM
     // -------------------------
 
-    socket.on("join-room", ({ roomId }) => {
+    socket.on("join-room", ({ roomId, username }) => {
         const id = roomId.toUpperCase();
         const room = rooms.get(id);
 
@@ -263,10 +264,56 @@ io.on("connection", (socket) => {
             return;
         }
 
-        // Allow re-join if socket is already in the room (reconnect case)
-        const alreadyIn = room.game.players.includes(socket.id);
+        const { game } = room;
 
-        if (!alreadyIn && room.game.players.length >= 2) {
+        // Allow re-join if socket is already in the room (same socket ID)
+        const alreadyIn = game.players.includes(socket.id);
+
+        if (!alreadyIn && game.players.length >= 2) {
+            // Room is full — check if this is a reconnecting player by username
+            const oldSocketId = Object.keys(game.playerNames).find(
+                sid => game.playerNames[sid] === username
+            );
+
+            if (oldSocketId) {
+                // Legitimate reconnect — swap old socket ID for new one
+                console.log(`[${id}] Reconnect: ${username} replacing socket ${oldSocketId} with ${socket.id}`);
+
+                // Update players array
+                const idx = game.players.indexOf(oldSocketId);
+                if (idx !== -1) game.players[idx] = socket.id;
+
+                // Update symbols map
+                if (game.symbols[oldSocketId]) {
+                    game.symbols[socket.id] = game.symbols[oldSocketId];
+                    delete game.symbols[oldSocketId];
+                }
+
+                // Update turn socket if needed
+                if (game.turnSocket === oldSocketId) game.turnSocket = socket.id;
+
+                // Update lastMoves if needed
+                if (game.lastMoves[oldSocketId]) {
+                    game.lastMoves[socket.id] = game.lastMoves[oldSocketId];
+                    delete game.lastMoves[oldSocketId];
+                }
+
+                // Update playerNames
+                game.playerNames[socket.id] = username;
+                delete game.playerNames[oldSocketId];
+
+                socket.join(id);
+                console.log(`[${id}] Reconnect successful for ${username}`);
+
+                // Re-send current game state to reconnected player
+                socket.emit("reconnect-state", {
+                    symbol:   game.symbols[socket.id],
+                    isMyTurn: game.turnSocket === socket.id,
+                    gameOver: game.gameOver
+                });
+                return;
+            }
+
             socket.emit("room-error", { reason: "ROOM_FULL" });
             return;
         }
@@ -274,7 +321,8 @@ io.on("connection", (socket) => {
         // Join the Socket.io room and add to game state
         socket.join(id);
         if (!alreadyIn) {
-            room.game.players.push(socket.id);
+            game.players.push(socket.id);
+            if (username) game.playerNames[socket.id] = username;
         }
 
         console.log(`Socket ${socket.id} joined room ${id}. Players: ${room.game.players.length}`);
