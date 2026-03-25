@@ -481,10 +481,15 @@ io.on("connection", (socket) => {
         const masterWinResult = checkMasterGridWin(game);
         if (masterWinResult) {
             game.gameOver = true;
-            io.to(roomId).emit("game-over", {
-                winner:      masterWinResult.winner,
-                winningLine: masterWinResult.line
-            });
+            if (masterWinResult.winner === "DRAW") {
+                // Simultaneous win (e.g. Wild sub-grid completes lines for both)
+                io.to(roomId).emit("game-draw");
+            } else {
+                io.to(roomId).emit("game-over", {
+                    winner:      masterWinResult.winner,
+                    winningLine: masterWinResult.line
+                });
+            }
             return;
         }
 
@@ -630,10 +635,14 @@ io.on("connection", (socket) => {
         const masterWinResult = checkMasterGridWin(game);
         if (masterWinResult) {
             game.gameOver = true;
-            io.to(roomId).emit("game-over", {
-                winner:      masterWinResult.winner,
-                winningLine: masterWinResult.line
-            });
+            if (masterWinResult.winner === "DRAW") {
+                io.to(roomId).emit("game-draw");
+            } else {
+                io.to(roomId).emit("game-over", {
+                    winner:      masterWinResult.winner,
+                    winningLine: masterWinResult.line
+                });
+            }
             return;
         }
 
@@ -1262,21 +1271,25 @@ function checkMasterGridWin(game) {
         [[0,2],[1,1],[2,0]]
     ];
 
+    let xWin = null, oWin = null;
+
     for (const line of lines) {
         const [[r1,c1],[r2,c2],[r3,c3]] = line;
         const v1 = g[r1][c1], v2 = g[r2][c2], v3 = g[r3][c3];
+        const vals = [v1, v2, v3];
 
-        if (v1 === "X" && v2 === "X" && v3 === "X") return { winner: "X", line };
-        if (v1 === "O" && v2 === "O" && v3 === "O") return { winner: "O", line };
+        const xCount    = vals.filter(v => v === "X").length;
+        const oCount    = vals.filter(v => v === "O").length;
+        const wildCount = vals.filter(v => v === "WILD").length;
 
-        const xCount   = [v1,v2,v3].filter(v => v === "X").length;
-        const oCount   = [v1,v2,v3].filter(v => v === "O").length;
-        const wildCount= [v1,v2,v3].filter(v => v === "WILD").length;
-
-        if (xCount + wildCount === 3 && oCount === 0 && xCount >= 1) return { winner: "X", line };
-        if (oCount + wildCount === 3 && xCount === 0 && oCount >= 1) return { winner: "O", line };
+        if (xCount + wildCount === 3 && oCount === 0 && xCount >= 1) xWin = { winner: "X", line };
+        if (oCount + wildCount === 3 && xCount === 0 && oCount >= 1) oWin = { winner: "O", line };
     }
 
+    // Both players won simultaneously — it's a draw
+    if (xWin && oWin) return { winner: "DRAW", line: xWin.line };
+    if (xWin) return xWin;
+    if (oWin) return oWin;
     return null;
 }
 
