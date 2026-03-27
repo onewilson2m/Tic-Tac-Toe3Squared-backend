@@ -7,7 +7,12 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "https://tic-tac-toe3squared-frontend.vercel.app",
+        origin: [
+            "https://tic-tac-toe3squared-frontend.vercel.app",
+            // "https://poki.com",           // add when confirmed
+            // "https://www.y8.com",
+            // "https://www.crazygames.com"
+        ],
         methods: ["GET", "POST"]
     }
 });
@@ -16,9 +21,19 @@ const io = new Server(server, {
 app.use(express.static(path.join(__dirname, "..", "frontend")));
 app.use(express.json());
 
-// CORS for Vercel frontend
+// CORS — allowed frontend origins
+const ALLOWED_ORIGINS = [
+    "https://tic-tac-toe3squared-frontend.vercel.app",
+    // "https://poki.com",           // add when confirmed
+    // "https://www.y8.com",
+    // "https://www.crazygames.com"
+];
+
 app.use((req, res, next) => {
-    res.setHeader("Access-Control-Allow-Origin", "https://tic-tac-toe3squared-frontend.vercel.app");
+    const origin = req.headers.origin;
+    if (ALLOWED_ORIGINS.includes(origin)) {
+        res.setHeader("Access-Control-Allow-Origin", origin);
+    }
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
     if (req.method === "OPTIONS") return res.sendStatus(204);
@@ -502,9 +517,9 @@ io.on("connection", (socket) => {
 
         game.movesRemainingThisTurn--;
 
-        // PLACE_2: check if second move is possible
-        if (action === "PLACE_2" && game.movesRemainingThisTurn === 1) {
-            const hasSecondMove = checkForValidTargets(game, playerSymbol, "PLACE_1");
+        // PLACE_2 / MYSTERY_PLACE_2: check if second move is possible
+        if ((action === "PLACE_2" || action === "MYSTERY_PLACE_2") && game.movesRemainingThisTurn === 1) {
+            const hasSecondMove = checkForValidTargets(game, playerSymbol, action === "MYSTERY_PLACE_2" ? "MYSTERY_PLACE_2" : "PLACE_1");
             if (!hasSecondMove) {
                 game.movesRemainingThisTurn = 0;
 
