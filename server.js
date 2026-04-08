@@ -225,23 +225,26 @@ function getRoomIdForSocket(socketId) {
 app.post("/create-room", (req, res) => {
     const isPublic = req.body?.isPublic === true;
     const roomId = generateRoomId();
-    rooms.set(roomId, { game: createGameState(), isPublic });
+    rooms.set(roomId, { game: createGameState(), isPublic, pendingClaim: false });
     console.log(`Room created: ${roomId} (${isPublic ? "public" : "private"})`);
     res.json({ roomId });
 });
 
 // Join or create a public room
 app.post("/join-public", (req, res) => {
-    // Find an existing public room with exactly 1 player waiting
+    // Find an existing public room with exactly 1 player waiting that isn't being claimed
     for (const [roomId, room] of rooms) {
-        if (room.isPublic && room.game.players.length === 1) {
+        if (room.isPublic && room.game.players.length === 1 && !room.pendingClaim) {
+            room.pendingClaim = true; // Reserve this room atomically
             console.log(`Public room found: ${roomId}`);
+            // Release the claim flag after a short window — in case the joiner never connects
+            setTimeout(() => { if (room) room.pendingClaim = false; }, 10000);
             return res.json({ roomId });
         }
     }
-    // None found — create a new public room and wait
+    // None found — create a new public room and wait for an opponent
     const roomId = generateRoomId();
-    rooms.set(roomId, { game: createGameState(), isPublic: true });
+    rooms.set(roomId, { game: createGameState(), isPublic: true, pendingClaim: false });
     console.log(`No public room found, created new: ${roomId}`);
     res.json({ roomId });
 });
@@ -339,6 +342,9 @@ io.on("connection", (socket) => {
             game.players.push(socket.id);
             if (username) game.playerNames[socket.id] = username;
         }
+
+        // Clear pending claim once second player actually connects
+        if (room.game.players.length === 2) room.pendingClaim = false;
 
         console.log(`Socket ${socket.id} joined room ${id}. Players: ${room.game.players.length}`);
 
