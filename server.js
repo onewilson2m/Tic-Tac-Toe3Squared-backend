@@ -1062,9 +1062,9 @@ function pickWeightedResult() {
 
 function pickWeightedBeginning() {
     const pool = [
-        { id: "PLACE_1",   weight: 78 },
-        { id: "PLACE_2",   weight: 7  },
-        { id: "LOSE_TURN", weight: 15 }
+        { id: "PLACE_1",   weight: 83 },
+        { id: "PLACE_2",   weight: 5  },
+        { id: "LOSE_TURN", weight: 12 }
     ];
     const total = pool.reduce((s, p) => s + p.weight, 0);
     let r = Math.random() * total;
