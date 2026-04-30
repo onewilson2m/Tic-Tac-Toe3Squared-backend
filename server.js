@@ -172,7 +172,12 @@ function createGameState() {
         ],
 
         currentSpinResult: null,
-        movesRemainingThisTurn: 0
+        movesRemainingThisTurn: 0,
+
+        // Cooldowns to reduce back-to-back PLACE_2 and LOSE_TURN results
+        // Keyed by socketId, populated when players join
+        place2Cooldown: {},
+        loseTurnCooldown: {}
     };
 }
 
@@ -341,6 +346,8 @@ io.on("connection", (socket) => {
         if (!alreadyIn) {
             game.players.push(socket.id);
             if (username) game.playerNames[socket.id] = username;
+            game.place2Cooldown[socket.id]   = 0;
+            game.loseTurnCooldown[socket.id] = 0;
         }
 
         // Clear pending claim once second player actually connects
@@ -724,6 +731,10 @@ io.on("connection", (socket) => {
             room.game.players = players;
 
             const [playerA, playerB] = players;
+            room.game.place2Cooldown[playerA]   = 0;
+            room.game.place2Cooldown[playerB]   = 0;
+            room.game.loseTurnCooldown[playerA] = 0;
+            room.game.loseTurnCooldown[playerB] = 0;
 
             io.to(playerA).emit("pre-game-init", {
                 numberSegments:   NUMBER_SEGMENTS,
@@ -816,6 +827,24 @@ function endTurn(game, roomId) {
         game.isMysteryTurn = false;
     }
 
+    // Update cooldowns for the current player
+    const spinId = game.currentSpinResult?.id;
+    const p2cd  = game.place2Cooldown;
+    const ltcd  = game.loseTurnCooldown;
+    const sid   = game.turnSocket;
+
+    if (spinId === "PLACE_2" || spinId === "MYSTERY_PLACE_2") {
+        p2cd[sid] = 3;
+    } else if ((p2cd[sid] || 0) > 0) {
+        p2cd[sid]--;
+    }
+
+    if (spinId === "LOSE_TURN") {
+        ltcd[sid] = 3;
+    } else if ((ltcd[sid] || 0) > 0) {
+        ltcd[sid]--;
+    }
+
     game.turnNumber++;
 
     // Switch player
@@ -861,10 +890,12 @@ function handleSpin(socket, game, roomId, isRespin) {
 
     // Pick result
     let chosenId;
+    const p2cd = game.place2Cooldown[socket.id]   || 0;
+    const ltcd = game.loseTurnCooldown[socket.id] || 0;
     if (game.turnNumber <= 6) {
-        chosenId = pickWeightedBeginning();
+        chosenId = pickWeightedBeginning(p2cd, ltcd);
     } else {
-        chosenId = pickWeightedResult();
+        chosenId = pickWeightedResult(p2cd, ltcd);
     }
 
     const segments = game.turnNumber <= 6 ? SPINNER_SEGMENTS_BEGINNING : SPINNER_SEGMENTS_MAIN;
@@ -1043,35 +1074,41 @@ function handleSpin(socket, game, roomId, isRespin) {
 // SPINNER HELPERS
 // -------------------------
 
-function pickWeightedResult() {
-    const pool = [
-        { id: "PLACE_1",   weight: 55 },
-        { id: "LOSE_TURN", weight: 11 },
-        { id: "PLACE_2",   weight: 6  },
-        { id: "REMOVE_1",  weight: 11 },
-        { id: "REPLACE_1", weight: 11 },
-        { id: "MYSTERY",   weight: 6  }
-    ];
-    const total = pool.reduce((s, p) => s + p.weight, 0);
-    let r = Math.random() * total;
-    for (const p of pool) {
-        if (r < p.weight) return p.id;
-        r -= p.weight;
-    }
+function place2Weight(cooldown) {
+    // cooldown 3→2, 2→3, 1→4, 0→5 (normal)
+    return Math.max(2, 5 - cooldown);
 }
 
-function pickWeightedBeginning() {
+function loseTurnWeight(cooldown) {
+    // cooldown 3→4, 2→6, 1→8, 0→10 (normal)
+    return Math.max(4, 10 - 2 * cooldown);
+}
+
+function pickWeightedResult(p2cd, ltcd) {
     const pool = [
-        { id: "PLACE_1",   weight: 83 },
-        { id: "PLACE_2",   weight: 5  },
-        { id: "LOSE_TURN", weight: 12 }
+        { id: "PLACE_1",   weight: 60 },
+        { id: "LOSE_TURN", weight: loseTurnWeight(ltcd) },
+        { id: "PLACE_2",   weight: place2Weight(p2cd) },
+        { id: "REMOVE_1",  weight: 10 },
+        { id: "REPLACE_1", weight: 10 },
+        { id: "MYSTERY",   weight: 5  }
     ];
     const total = pool.reduce((s, p) => s + p.weight, 0);
     let r = Math.random() * total;
-    for (const p of pool) {
-        if (r < p.weight) return p.id;
-        r -= p.weight;
-    }
+    for (const p of pool) { if (r < p.weight) return p.id; r -= p.weight; }
+    return "PLACE_1";
+}
+
+function pickWeightedBeginning(p2cd, ltcd) {
+    const pool = [
+        { id: "PLACE_1",   weight: 85 },
+        { id: "PLACE_2",   weight: place2Weight(p2cd) },
+        { id: "LOSE_TURN", weight: loseTurnWeight(ltcd) }
+    ];
+    const total = pool.reduce((s, p) => s + p.weight, 0);
+    let r = Math.random() * total;
+    for (const p of pool) { if (r < p.weight) return p.id; r -= p.weight; }
+    return "PLACE_1";
 }
 
 function getSpinnerDescription(id) {
