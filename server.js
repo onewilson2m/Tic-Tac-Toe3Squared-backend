@@ -174,10 +174,12 @@ function createGameState() {
         currentSpinResult: null,
         movesRemainingThisTurn: 0,
 
-        // Cooldowns to reduce back-to-back PLACE_2 and LOSE_TURN results
-        // Keyed by socketId, populated when players join
-        place2Cooldown: {},
-        loseTurnCooldown: {}
+        // Cooldowns — keyed by socketId, populated when players join
+        place2Cooldown:   {},
+        loseTurnCooldown: {},
+        mysteryCooldown:  {},
+        removeCooldown:   {},
+        replaceCooldown:  {}
     };
 }
 
@@ -348,6 +350,9 @@ io.on("connection", (socket) => {
             if (username) game.playerNames[socket.id] = username;
             game.place2Cooldown[socket.id]   = 0;
             game.loseTurnCooldown[socket.id] = 0;
+            game.mysteryCooldown[socket.id]  = 0;
+            game.removeCooldown[socket.id]   = 0;
+            game.replaceCooldown[socket.id]  = 0;
         }
 
         // Clear pending claim once second player actually connects
@@ -731,10 +736,13 @@ io.on("connection", (socket) => {
             room.game.players = players;
 
             const [playerA, playerB] = players;
-            room.game.place2Cooldown[playerA]   = 0;
-            room.game.place2Cooldown[playerB]   = 0;
-            room.game.loseTurnCooldown[playerA] = 0;
-            room.game.loseTurnCooldown[playerB] = 0;
+            [playerA, playerB].forEach(sid => {
+                room.game.place2Cooldown[sid]   = 0;
+                room.game.loseTurnCooldown[sid] = 0;
+                room.game.mysteryCooldown[sid]  = 0;
+                room.game.removeCooldown[sid]   = 0;
+                room.game.replaceCooldown[sid]  = 0;
+            });
 
             io.to(playerA).emit("pre-game-init", {
                 numberSegments:   NUMBER_SEGMENTS,
@@ -827,23 +835,34 @@ function endTurn(game, roomId) {
         game.isMysteryTurn = false;
     }
 
-    // Update cooldowns for the current player
+    // Update all cooldowns for the current player
+    const sid    = game.turnSocket;
     const spinId = game.currentSpinResult?.id;
-    const p2cd  = game.place2Cooldown;
-    const ltcd  = game.loseTurnCooldown;
-    const sid   = game.turnSocket;
 
+    // PLACE_2
     if (spinId === "PLACE_2" || spinId === "MYSTERY_PLACE_2") {
-        p2cd[sid] = 3;
-    } else if ((p2cd[sid] || 0) > 0) {
-        p2cd[sid]--;
-    }
+        game.place2Cooldown[sid] = 3;
+    } else if ((game.place2Cooldown[sid] || 0) > 0) { game.place2Cooldown[sid]--; }
 
-    if (spinId === "LOSE_TURN") {
-        ltcd[sid] = 3;
-    } else if ((ltcd[sid] || 0) > 0) {
-        ltcd[sid]--;
-    }
+    // LOSE_TURN
+    if (spinId === "LOSE_TURN" || spinId === "NO_TARGETS") {
+        game.loseTurnCooldown[sid] = 3;
+    } else if ((game.loseTurnCooldown[sid] || 0) > 0) { game.loseTurnCooldown[sid]--; }
+
+    // MYSTERY
+    if (spinId?.startsWith("MYSTERY_")) {
+        game.mysteryCooldown[sid] = 2;
+    } else if ((game.mysteryCooldown[sid] || 0) > 0) { game.mysteryCooldown[sid]--; }
+
+    // REMOVE
+    if (spinId === "REMOVE_1") {
+        game.removeCooldown[sid] = 2;
+    } else if ((game.removeCooldown[sid] || 0) > 0) { game.removeCooldown[sid]--; }
+
+    // REPLACE
+    if (spinId === "REPLACE_1") {
+        game.replaceCooldown[sid] = 2;
+    } else if ((game.replaceCooldown[sid] || 0) > 0) { game.replaceCooldown[sid]--; }
 
     game.turnNumber++;
 
@@ -890,12 +909,16 @@ function handleSpin(socket, game, roomId, isRespin) {
 
     // Pick result
     let chosenId;
-    const p2cd = game.place2Cooldown[socket.id]   || 0;
-    const ltcd = game.loseTurnCooldown[socket.id] || 0;
+    const sid   = socket.id;
+    const p2cd  = game.place2Cooldown[sid]   || 0;
+    const ltcd  = game.loseTurnCooldown[sid] || 0;
+    const mycd  = game.mysteryCooldown[sid]  || 0;
+    const rmcd  = game.removeCooldown[sid]   || 0;
+    const rpcd  = game.replaceCooldown[sid]  || 0;
     if (game.turnNumber <= 6) {
         chosenId = pickWeightedBeginning(p2cd, ltcd);
     } else {
-        chosenId = pickWeightedResult(p2cd, ltcd);
+        chosenId = pickWeightedResult(p2cd, ltcd, mycd, rmcd, rpcd);
     }
 
     const segments = game.turnNumber <= 6 ? SPINNER_SEGMENTS_BEGINNING : SPINNER_SEGMENTS_MAIN;
@@ -1074,24 +1097,20 @@ function handleSpin(socket, game, roomId, isRespin) {
 // SPINNER HELPERS
 // -------------------------
 
-function place2Weight(cooldown) {
-    // cooldown 3→2, 2→3, 1→4, 0→5 (normal)
-    return Math.max(2, 5 - cooldown);
-}
+function place2Weight(cd)   { return Math.max(2, 5 - cd); }
+function loseTurnWeight(cd) { return Math.max(4, 10 - 2 * cd); }
+function mysteryWeight(cd)  { return cd > 0 ? 1 : 5; }
+function removeWeight(cd)   { return cd > 0 ? 2 : 10; }
+function replaceWeight(cd)  { return cd > 0 ? 2 : 10; }
 
-function loseTurnWeight(cooldown) {
-    // cooldown 3→4, 2→6, 1→8, 0→10 (normal)
-    return Math.max(4, 10 - 2 * cooldown);
-}
-
-function pickWeightedResult(p2cd, ltcd) {
+function pickWeightedResult(p2cd, ltcd, mycd, rmcd, rpcd) {
     const pool = [
         { id: "PLACE_1",   weight: 60 },
         { id: "LOSE_TURN", weight: loseTurnWeight(ltcd) },
         { id: "PLACE_2",   weight: place2Weight(p2cd) },
-        { id: "REMOVE_1",  weight: 10 },
-        { id: "REPLACE_1", weight: 10 },
-        { id: "MYSTERY",   weight: 5  }
+        { id: "REMOVE_1",  weight: removeWeight(rmcd) },
+        { id: "REPLACE_1", weight: replaceWeight(rpcd) },
+        { id: "MYSTERY",   weight: mysteryWeight(mycd) }
     ];
     const total = pool.reduce((s, p) => s + p.weight, 0);
     let r = Math.random() * total;
