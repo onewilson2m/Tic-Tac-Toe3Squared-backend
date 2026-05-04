@@ -1097,11 +1097,30 @@ function handleSpin(socket, game, roomId, isRespin) {
 // SPINNER HELPERS
 // -------------------------
 
-function place2Weight(cd)   { return Math.max(2, 5 - cd); }
-function loseTurnWeight(cd) { return Math.max(4, 10 - 2 * cd); }
+function place2Weight(cd) {
+    if (cd >= 3) return 1;   // just landed — almost impossible next spin
+    if (cd === 2) return 2;  // one turn ago
+    if (cd === 1) return 3;  // two turns ago
+    return 5;                // normal weight
+}
+
+function loseTurnWeight(cd) {
+    if (cd >= 3) return 1;   // just landed — almost impossible next spin
+    if (cd === 2) return 3;  // one turn ago
+    if (cd === 1) return 6;  // two turns ago — still suppressed
+    return 10;               // normal weight
+}
 function mysteryWeight(cd)  { return cd > 0 ? 1 : 5; }
-function removeWeight(cd)   { return cd > 0 ? 2 : 10; }
-function replaceWeight(cd)  { return cd > 0 ? 2 : 10; }
+function removeWeight(cd)  {
+    if (cd >= 2) return 1;   // just landed — near impossible
+    if (cd === 1) return 4;  // one turn ago — still suppressed
+    return 10;               // normal
+}
+function replaceWeight(cd) {
+    if (cd >= 2) return 1;   // just landed — near impossible
+    if (cd === 1) return 4;  // one turn ago — still suppressed
+    return 10;               // normal
+}
 
 function pickWeightedResult(p2cd, ltcd, mycd, rmcd, rpcd) {
     const pool = [
