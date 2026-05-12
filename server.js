@@ -630,8 +630,6 @@ io.on("connection", (socket) => {
             return;
         }
 
-        console.log(`[${roomId}] SWAP: [${r1},${c1},${i1}]=${val1} <-> [${r2},${c2},${i2}]=${val2}`);
-
         game.masterGrid[r1][c1][i1] = val2;
         game.masterGrid[r2][c2][i2] = val1;
 
@@ -1178,9 +1176,28 @@ function isSubGridPlayable(game, masterRow, masterCol) {
 }
 
 function checkForValidTargets(game, playerSymbol, actionId) {
-    const playerId      = Object.keys(game.symbols).find(id => game.symbols[id] === playerSymbol);
+    const playerId        = Object.keys(game.symbols).find(id => game.symbols[id] === playerSymbol);
     const isMysteryAction = actionId.startsWith("MYSTERY_");
 
+    // -------------------------
+    // SPECIAL CASE FIX:
+    // When only ONE sub-grid is open, the consecutive rule is suspended.
+    // Therefore, PLACE_2 is ALWAYS allowed if that grid has an EMPTY cell.
+    // -------------------------
+    if (actionId === "PLACE_2" || actionId === "MYSTERY_PLACE_2") {
+        if (countOpenSubGrids(game) <= 1) {
+            for (let r = 0; r < 3; r++)
+                for (let c = 0; c < 3; c++)
+                    if (game.masterStatus[r][c] === "EMPTY" &&
+                        game.masterGrid[r][c].includes("EMPTY"))
+                        return true;
+            return false;
+        }
+    }
+
+    // -------------------------
+    // PLACE_1
+    // -------------------------
     if (actionId === "PLACE_1") {
         for (let r = 0; r < 3; r++)
             for (let c = 0; c < 3; c++) {
@@ -1191,6 +1208,9 @@ function checkForValidTargets(game, playerSymbol, actionId) {
         return false;
     }
 
+    // -------------------------
+    // PLACE_2 (normal case)
+    // -------------------------
     if (actionId === "PLACE_2" || actionId === "MYSTERY_PLACE_2") {
         for (let r = 0; r < 3; r++)
             for (let c = 0; c < 3; c++) {
@@ -1201,6 +1221,9 @@ function checkForValidTargets(game, playerSymbol, actionId) {
         return false;
     }
 
+    // -------------------------
+    // MYSTERY_PLACE_SPIN / WILD
+    // -------------------------
     if (actionId === "MYSTERY_PLACE_SPIN" || actionId === "MYSTERY_PLACE_WILD") {
         for (let r = 0; r < 3; r++)
             for (let c = 0; c < 3; c++) {
@@ -1210,6 +1233,9 @@ function checkForValidTargets(game, playerSymbol, actionId) {
         return false;
     }
 
+    // -------------------------
+    // MYSTERY_SWAP
+    // -------------------------
     if (actionId === "MYSTERY_SWAP") {
         let hasX = false, hasO = false;
         for (let r = 0; r < 3; r++)
@@ -1223,6 +1249,9 @@ function checkForValidTargets(game, playerSymbol, actionId) {
         return false;
     }
 
+    // -------------------------
+    // REMOVE / REPLACE
+    // -------------------------
     if (["REMOVE_1","REPLACE_1","MYSTERY_REPLACE_WILD"].includes(actionId)) {
         const opponentSymbol = playerSymbol === "X" ? "O" : "X";
         for (let r = 0; r < 3; r++)
@@ -1402,6 +1431,7 @@ function checkForDraw(game) {
 }
 
 // -------------------------
+// CAWilsonApps 2025-2026
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
