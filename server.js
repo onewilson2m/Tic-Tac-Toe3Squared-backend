@@ -7,12 +7,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: [
-            "https://tic-tac-toe3squared-frontend.vercel.app",
-            // "https://poki.com",           // add when confirmed
-            // "https://www.y8.com",
-            // "https://www.crazygames.com"
-        ],
+        origin: "*",
         methods: ["GET", "POST"]
     }
 });
@@ -21,19 +16,9 @@ const io = new Server(server, {
 app.use(express.static(path.join(__dirname, "..", "frontend")));
 app.use(express.json());
 
-// CORS — allowed frontend origins
-const ALLOWED_ORIGINS = [
-    "https://tic-tac-toe3squared-frontend.vercel.app",
-    // "https://poki.com",           // add when confirmed
-    // "https://www.y8.com",
-    // "https://www.crazygames.com"
-];
-
+// CORS — open to all origins for multi-site distribution
 app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    if (ALLOWED_ORIGINS.includes(origin)) {
-        res.setHeader("Access-Control-Allow-Origin", origin);
-    }
+    res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
     if (req.method === "OPTIONS") return res.sendStatus(204);
