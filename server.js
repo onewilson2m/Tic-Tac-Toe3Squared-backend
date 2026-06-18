@@ -217,7 +217,7 @@ function getRoomIdForSocket(socketId) {
 app.post("/create-room", (req, res) => {
     const isPublic = req.body?.isPublic === true;
     const roomId = generateRoomId();
-    rooms.set(roomId, { game: createGameState(), isPublic, pendingClaim: false });
+    rooms.set(roomId, { game: createGameState(), isPublic, pendingClaim: false, createdAt: Date.now() });
     console.log(`Room created: ${roomId} (${isPublic ? "public" : "private"})`);
     res.json({ roomId });
 });
@@ -236,7 +236,7 @@ app.post("/join-public", (req, res) => {
     }
     // None found — create a new public room and wait for an opponent
     const roomId = generateRoomId();
-    rooms.set(roomId, { game: createGameState(), isPublic: true, pendingClaim: false });
+    rooms.set(roomId, { game: createGameState(), isPublic: true, pendingClaim: false, createdAt: Date.now() });
     console.log(`No public room found, created new: ${roomId}`);
     res.json({ roomId });
 });
@@ -252,6 +252,32 @@ app.get("/check-room/:roomId", (req, res) => {
         return res.json({ status: "full" });
     }
     res.json({ status: "ok" });
+});
+
+// List open public rooms (1 player waiting, created within last 5 minutes)
+app.get("/public-rooms", (req, res) => {
+    const STALE_MS = 5 * 60 * 1000; // 5 minutes
+    const now = Date.now();
+    const open = [];
+
+    for (const [roomId, room] of rooms) {
+        if (
+            room.isPublic &&
+            room.game.players.length === 1 &&
+            !room.game.gameOver &&
+            (now - (room.createdAt || 0)) < STALE_MS
+        ) {
+            // Get the waiting player's display name from playerNames map
+            const waitingSocketId = room.game.players[0];
+            const displayName = room.game.playerNames[waitingSocketId] || `Guest_${roomId}`;
+            open.push({ roomId, displayName, createdAt: room.createdAt });
+        }
+    }
+
+    // Sort by oldest first (they've been waiting longest)
+    open.sort((a, b) => a.createdAt - b.createdAt);
+
+    res.json({ rooms: open });
 });
 
 // -------------------------
