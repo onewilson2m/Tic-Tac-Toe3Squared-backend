@@ -216,28 +216,37 @@ function getRoomIdForSocket(socketId) {
 // Create a new room (public or private)
 app.post("/create-room", (req, res) => {
     const isPublic = req.body?.isPublic === true;
+    const platform = req.body?.platform || "open";
     const roomId = generateRoomId();
-    rooms.set(roomId, { game: createGameState(), isPublic, pendingClaim: false, createdAt: Date.now() });
-    console.log(`Room created: ${roomId} (${isPublic ? "public" : "private"})`);
+    rooms.set(roomId, { game: createGameState(), isPublic, pendingClaim: false, createdAt: Date.now(), platform });
+    console.log(`Room created: ${roomId} (${isPublic ? "public" : "private"}, platform: ${platform})`);
     res.json({ roomId });
 });
 
 // Join or create a public room
 app.post("/join-public", (req, res) => {
-    // Find an existing public room with exactly 1 player waiting that isn't being claimed
+    const platform = req.body?.platform || "open";
+
+    // Find an existing public room for this platform with exactly 1 player waiting
     for (const [roomId, room] of rooms) {
-        if (room.isPublic && room.game.players.length === 1 && !room.pendingClaim) {
+        if (
+            room.isPublic &&
+            room.game.players.length === 1 &&
+            !room.pendingClaim &&
+            !room.game.gameOver &&
+            (room.platform === platform || room.platform === "open" || platform === "open")
+        ) {
             room.pendingClaim = true; // Reserve this room atomically
-            console.log(`Public room found: ${roomId}`);
+            console.log(`Public room found: ${roomId} (platform: ${platform})`);
             // Release the claim flag after a short window — in case the joiner never connects
             setTimeout(() => { if (room) room.pendingClaim = false; }, 10000);
             return res.json({ roomId });
         }
     }
-    // None found — create a new public room and wait for an opponent
+    // None found — create a new public room for this platform
     const roomId = generateRoomId();
-    rooms.set(roomId, { game: createGameState(), isPublic: true, pendingClaim: false, createdAt: Date.now() });
-    console.log(`No public room found, created new: ${roomId}`);
+    rooms.set(roomId, { game: createGameState(), isPublic: true, pendingClaim: false, createdAt: Date.now(), platform });
+    console.log(`No public room found, created new: ${roomId} (platform: ${platform})`);
     res.json({ roomId });
 });
 
@@ -258,6 +267,7 @@ app.get("/check-room/:roomId", (req, res) => {
 app.get("/public-rooms", (req, res) => {
     const STALE_MS = 5 * 60 * 1000; // 5 minutes
     const now = Date.now();
+    const platform = req.query.platform || "open";
     const open = [];
 
     for (const [roomId, room] of rooms) {
@@ -265,18 +275,16 @@ app.get("/public-rooms", (req, res) => {
             room.isPublic &&
             room.game.players.length === 1 &&
             !room.game.gameOver &&
-            (now - (room.createdAt || 0)) < STALE_MS
+            (now - (room.createdAt || 0)) < STALE_MS &&
+            (room.platform === platform || room.platform === "open" || platform === "open")
         ) {
-            // Get the waiting player's display name from playerNames map
             const waitingSocketId = room.game.players[0];
             const displayName = room.game.playerNames[waitingSocketId] || `Guest_${roomId}`;
             open.push({ roomId, displayName, createdAt: room.createdAt });
         }
     }
 
-    // Sort by oldest first (they've been waiting longest)
     open.sort((a, b) => a.createdAt - b.createdAt);
-
     res.json({ rooms: open });
 });
 
@@ -342,10 +350,14 @@ io.on("connection", (socket) => {
                 console.log(`[${id}] Reconnect successful for ${username}`);
 
                 // Re-send current game state to reconnected player
+                const opponentSocketId = game.players.find(p => p !== socket.id);
+                const opponentName = opponentSocketId ? (game.playerNames[opponentSocketId] || "Opponent") : "Opponent";
                 socket.emit("reconnect-state", {
-                    symbol:   game.symbols[socket.id],
-                    isMyTurn: game.turnSocket === socket.id,
-                    gameOver: game.gameOver
+                    symbol:       game.symbols[socket.id],
+                    isMyTurn:     game.turnSocket === socket.id,
+                    gameOver:     game.gameOver,
+                    yourName:     username,
+                    opponentName: opponentName
                 });
                 return;
             }
@@ -441,8 +453,17 @@ io.on("connection", (socket) => {
             game.symbols[winner] = "X";
             game.symbols[loser]  = "O";
 
-            io.to(winner).emit("symbol-assigned", { youAre: "X", opponentIs: "O" });
-            io.to(loser).emit("symbol-assigned",  { youAre: "O", opponentIs: "X" });
+            const winnerName = game.playerNames[winner] || "Player 1";
+            const loserName  = game.playerNames[loser]  || "Player 2";
+
+            io.to(winner).emit("symbol-assigned", {
+                youAre: "X", opponentIs: "O",
+                yourName: winnerName, opponentName: loserName
+            });
+            io.to(loser).emit("symbol-assigned", {
+                youAre: "O", opponentIs: "X",
+                yourName: loserName, opponentName: winnerName
+            });
         }, 2000);
 
         setTimeout(() => {
