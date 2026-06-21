@@ -234,7 +234,7 @@ app.post("/join-public", (req, res) => {
             room.game.players.length === 1 &&
             !room.pendingClaim &&
             !room.game.gameOver &&
-            (room.platform === platform || room.platform === "open" || platform === "open")
+            room.platform === platform
         ) {
             room.pendingClaim = true; // Reserve this room atomically
             console.log(`Public room found: ${roomId} (platform: ${platform})`);
@@ -276,7 +276,7 @@ app.get("/public-rooms", (req, res) => {
             room.game.players.length === 1 &&
             !room.game.gameOver &&
             (now - (room.createdAt || 0)) < STALE_MS &&
-            (room.platform === platform || room.platform === "open" || platform === "open")
+            room.platform === platform
         ) {
             const waitingSocketId = room.game.players[0];
             const displayName = room.game.playerNames[waitingSocketId] || `Guest_${roomId}`;
