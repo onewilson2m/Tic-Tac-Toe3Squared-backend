@@ -225,6 +225,7 @@ app.post("/create-room", (req, res) => {
 
 // Join or create a public room
 app.post("/join-public", (req, res) => {
+    const platform = req.body?.platform || "open";
 
     // Find an existing public room with exactly 1 player waiting that isn't being claimed
     for (const [roomId, room] of rooms) {
